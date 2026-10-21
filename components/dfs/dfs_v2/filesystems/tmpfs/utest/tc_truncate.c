@@ -58,9 +58,15 @@ static void test_zero_length(void)
     uassert_int_equal(lseek(fd, 0, SEEK_SET), 0);
     uassert_int_equal(read(fd, buffer, sizeof(payload) - 1), sizeof(payload) - 1);
     uassert_int_equal(rt_memcmp(buffer, payload, sizeof(payload) - 1), 0);
-    uassert_int_equal(fstat(fd, &st), 0);
-    uassert_int_equal(st.st_size, sizeof(payload) - 1);
     uassert_int_equal(close(fd), 0);
+    fd = open(TEST_PATH, O_RDONLY, 0);
+    uassert_true(fd >= 0);
+    if (fd >= 0)
+    {
+        uassert_int_equal(fstat(fd, &st), 0);
+        uassert_int_equal(st.st_size, sizeof(payload) - 1);
+        uassert_int_equal(close(fd), 0);
+    }
     uassert_int_equal(unlink(TEST_PATH), 0);
 }
 

@@ -28,7 +28,7 @@ jobs:
       - name: Install toolchain
         run: |
           if [ "$MODE" = standard ]; then
-            curl -fL --retry 3 https://github.com/RT-Thread/toolchains-ci/releases/download/v1.3/gcc-arm-10.2-2020.11-x86_64-aarch64-none-elf.tar.xz -o /tmp/gcc.tar.xz
+            curl -fL --retry 3 https://github.com/RT-Thread/toolchains-ci/releases/download/v1.6/gcc-arm-10.2-2020.11-x86_64-aarch64-none-elf.tar.xz -o /tmp/gcc.tar.xz
             tar xf /tmp/gcc.tar.xz -C /opt
             echo RTT_EXEC_PATH=/opt/gcc-arm-10.2-2020.11-x86_64-aarch64-none-elf/bin >> "$GITHUB_ENV"
             echo RTT_CC_PREFIX=aarch64-none-elf- >> "$GITHUB_ENV"
@@ -41,11 +41,12 @@ jobs:
       - name: Configure and build
         run: |
           if [ "$MODE" = baseline-smart ]; then
+            git fetch --depth=1 origin 1c801efabc36337d0013721eb30b11de0adb3075
             git show 1c801efabc36337d0013721eb30b11de0adb3075:components/dfs/dfs_v2/filesystems/tmpfs/dfs_tmpfs.c > components/dfs/dfs_v2/filesystems/tmpfs/dfs_tmpfs.c
           fi
           printf '\nCONFIG_RT_USING_UTESTCASES=y\nCONFIG_RT_UTEST_TMPFS_TRUNCATE=y\nCONFIG_RT_USING_DFS_TMPFS=y\nCONFIG_RT_CONSOLEBUF_SIZE=1024\n' >> "$BSP/.config"
           if [ "$MODE" != standard ]; then echo CONFIG_RT_USING_SMART=y >> "$BSP/.config"; fi
-          if [ "$MODE" = smart-nocache ]; then echo '# CONFIG_RT_USING_PAGECACHE is not set' >> "$BSP/.config"; fi
+          if [ "$MODE" = smart-nocache ]; then printf '# CONFIG_RT_USING_LDSO is not set\n# CONFIG_RT_USING_PAGECACHE is not set\n' >> "$BSP/.config"; fi
           scons --pyconfig-silent -C "$BSP"
           scons -j$(nproc) -C "$BSP" > build.log 2>&1 || { tail -100 build.log; exit 1; }
           tail -15 build.log

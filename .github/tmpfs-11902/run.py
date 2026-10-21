@@ -28,7 +28,7 @@ try:
   assert 'assertion failed' in result.lower() or re.search(r'\[\s*FAILED\s*\]',result), 'Unpatched baseline unexpectedly passed'
   print('EXPECTED BASELINE FAILURE CONFIRMED')
  else:
-  assert not re.search(r'\[\s*FAILED\s*\]|assertion failed|TC init failed|TC cleanup failed',result,re.I), 'Regression test failed'
+  assert not re.search(r'\[\s*FAILED\s*\]|\[\s*ASSERT\s*\]|assertion failed|TC init failed|TC cleanup failed',result,re.I), 'Regression test failed'
   assert re.search(r'\[\s*PASSED\s*\].*components.dfs.tmpfs_truncate',result), 'No passing testcase result found'
   if a.user:
    send('sys_log 1');time.sleep(.4);user_start=len(data);send('/truncate.elf');result=wait_for(r'\[USER\] PASS|\[USER\] FAIL|assertion failed',60,user_start)
