@@ -1,0 +1,76 @@
+name: tmpfs 11902 validation
+on:
+  push:
+    branches: [validation/tmpfs-11902]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [standard, smart-cache, smart-nocache, baseline-smart]
+    env:
+      BSP: bsp/qemu-virt64-aarch64
+      MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm dosfstools mtools
+          pip install scons kconfiglib clang-format==23.1.3
+      - name: Install toolchain
+        run: |
+          if [ "$MODE" = standard ]; then
+            curl -fL --retry 3 https://github.com/RT-Thread/toolchains-ci/releases/download/v1.3/gcc-arm-10.2-2020.11-x86_64-aarch64-none-elf.tar.xz -o /tmp/gcc.tar.xz
+            tar xf /tmp/gcc.tar.xz -C /opt
+            echo RTT_EXEC_PATH=/opt/gcc-arm-10.2-2020.11-x86_64-aarch64-none-elf/bin >> "$GITHUB_ENV"
+            echo RTT_CC_PREFIX=aarch64-none-elf- >> "$GITHUB_ENV"
+          else
+            curl -fL --retry 3 https://github.com/RT-Thread/toolchains-ci/releases/download/v1.7/aarch64-linux-musleabi_for_x86_64-pc-linux-gnu_stable.tar.bz2 -o /tmp/gcc.tar.bz2
+            tar xf /tmp/gcc.tar.bz2 -C /opt
+            echo RTT_EXEC_PATH=/opt/aarch64-linux-musleabi_for_x86_64-pc-linux-gnu/bin >> "$GITHUB_ENV"
+            echo RTT_CC_PREFIX=aarch64-linux-musleabi- >> "$GITHUB_ENV"
+          fi
+      - name: Configure and build
+        run: |
+          if [ "$MODE" = baseline-smart ]; then
+            git show 1c801efabc36337d0013721eb30b11de0adb3075:components/dfs/dfs_v2/filesystems/tmpfs/dfs_tmpfs.c > components/dfs/dfs_v2/filesystems/tmpfs/dfs_tmpfs.c
+          fi
+          printf '\nCONFIG_RT_USING_UTESTCASES=y\nCONFIG_RT_UTEST_TMPFS_TRUNCATE=y\nCONFIG_RT_USING_DFS_TMPFS=y\nCONFIG_RT_CONSOLEBUF_SIZE=1024\n' >> "$BSP/.config"
+          if [ "$MODE" != standard ]; then echo CONFIG_RT_USING_SMART=y >> "$BSP/.config"; fi
+          if [ "$MODE" = smart-nocache ]; then echo '# CONFIG_RT_USING_PAGECACHE is not set' >> "$BSP/.config"; fi
+          scons --pyconfig-silent -C "$BSP"
+          scons -j$(nproc) -C "$BSP" > build.log 2>&1 || { tail -100 build.log; exit 1; }
+          tail -15 build.log
+          grep -E 'RT_USING_SMART|RT_USING_PAGECACHE|RT_USING_MEMHEAP_AS_HEAP|RT_UTEST_TMPFS_TRUNCATE' "$BSP/rtconfig.h"
+      - name: Prepare filesystem and user process
+        run: |
+          truncate -s 64M "$BSP/sd.bin"
+          mkfs.fat "$BSP/sd.bin"
+          if [ "$MODE" != standard ] && [ "$MODE" != baseline-smart ]; then
+            "$RTT_EXEC_PATH/${RTT_CC_PREFIX}gcc" -nostdlib -static -no-pie -ffreestanding -fno-stack-protector -Wl,-T,.github/tmpfs-11902/user.ld -o /tmp/truncate.elf .github/tmpfs-11902/user.c
+            mcopy -i "$BSP/sd.bin" /tmp/truncate.elf ::/truncate.elf
+            mmd -i "$BSP/sd.bin" ::/user_tmp
+          fi
+      - name: Run regression tests
+        run: |
+          args=()
+          if [ "$MODE" = baseline-smart ]; then args+=(--expect-failure); elif [ "$MODE" != standard ]; then args+=(--user); fi
+          python .github/tmpfs-11902/run.py --bsp "$BSP" "${args[@]}"
+      - name: Save logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmpfs-11902-${{ matrix.mode }}
+          path: |
+            build.log
+            tmpfs-11902-qemu.log
+            bsp/qemu-virt64-aarch64/.config
+            bsp/qemu-virt64-aarch64/rtconfig.h
