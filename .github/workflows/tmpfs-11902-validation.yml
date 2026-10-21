@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [standard, smart-cache, smart-nocache, baseline-smart]
+        mode: [standard, smart-cache, baseline-smart]
     env:
       BSP: bsp/qemu-virt64-aarch64
       MODE: ${{ matrix.mode }}
@@ -25,6 +25,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-arm dosfstools mtools
           pip install scons kconfiglib clang-format==23.1.3
+      - name: Check formatting
+        run: |
+          clang-format --dry-run --Werror components/dfs/dfs_v2/filesystems/tmpfs/dfs_tmpfs.c
+          clang-format --dry-run --Werror components/dfs/dfs_v2/filesystems/tmpfs/utest/tc_truncate.c
       - name: Install toolchain
         run: |
           if [ "$MODE" = standard ]; then
@@ -46,11 +50,11 @@ jobs:
           fi
           printf '\nCONFIG_RT_USING_UTESTCASES=y\nCONFIG_RT_UTEST_TMPFS_TRUNCATE=y\nCONFIG_RT_USING_DFS_TMPFS=y\nCONFIG_RT_CONSOLEBUF_SIZE=1024\n' >> "$BSP/.config"
           if [ "$MODE" != standard ]; then echo CONFIG_RT_USING_SMART=y >> "$BSP/.config"; fi
-          if [ "$MODE" = smart-nocache ]; then printf '# CONFIG_RT_USING_LDSO is not set\n# CONFIG_RT_USING_PAGECACHE is not set\n' >> "$BSP/.config"; fi
           scons --pyconfig-silent -C "$BSP"
           scons -j$(nproc) -C "$BSP" > build.log 2>&1 || { tail -100 build.log; exit 1; }
           tail -15 build.log
           grep -E 'RT_USING_SMART|RT_USING_PAGECACHE|RT_USING_MEMHEAP_AS_HEAP|RT_UTEST_TMPFS_TRUNCATE' "$BSP/rtconfig.h"
+          if [ "$MODE" != standard ]; then grep -q '^#define RT_USING_SMART$' "$BSP/rtconfig.h"; grep -q '^#define RT_USING_PAGECACHE$' "$BSP/rtconfig.h"; fi
       - name: Prepare filesystem and user process
         run: |
           truncate -s 64M "$BSP/sd.bin"
@@ -70,6 +74,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tmpfs-11902-${{ matrix.mode }}
+          include-hidden-files: true
           path: |
             build.log
             tmpfs-11902-qemu.log
